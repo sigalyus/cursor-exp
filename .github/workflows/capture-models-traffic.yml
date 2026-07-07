@@ -1,0 +1,41 @@
+name: capture-models-traffic
+on: workflow_dispatch            # lets you run it manually from the Actions tab
+
+permissions:
+  models: read                   # grants the built-in GITHUB_TOKEN access to GitHub Models
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest       # a disposable GitHub-hosted runner (VM in GitHub's cloud)
+    steps:
+      - name: Install mitmproxy
+        run: pip install mitmproxy
+
+      - name: Start mitmdump and trust its CA
+        run: |
+          mitmdump -w flows.dump & echo $! > mitm.pid
+          sleep 4                                    # give it time to generate its CA cert
+          sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/mitm.crt
+          sudo update-ca-certificates
+
+      - name: Call the model through the proxy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # auto-injected; no PAT needed
+          https_proxy: http://127.0.0.1:8080
+          http_proxy: http://127.0.0.1:8080
+        run: |
+          curl -sS "https://models.github.ai/inference/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -d '{"messages":[{"role":"user","content":"What is the capital of France?"}],"model":"openai/gpt-4o"}'
+
+      - name: Stop mitmdump
+        if: always()
+        run: kill $(cat mitm.pid) || true
+
+      - name: Upload the captured flows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mitm-flows
+          path: flows.dump
