@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Orange lion shield logo</title>
+  <desc id="desc">A transparent-background orange shield with a stylized white lion face.</desc>
+  <defs>
+    <linearGradient id="shield-gradient" x1="152" y1="512" x2="872" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6500"/>
+      <stop offset="1" stop-color="#ff1f12"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#shield-gradient)" d="M384 140h256l78 96c52-9 98-8 126 18 30 28 56 72 70 110l-38 86 34 93-74 248-324 204-324-204-74-248 34-93-38-86c14-38 40-82 70-110 28-26 74-27 126-18l78-96z"/>
+  <path fill="#fff" d="M274 388c18-58 62-112 86-150 48 20 108 33 158 34 52-1 109-20 146-4 29 13 79 17 144-1 24 38 68 92 86 150 11 36-8 73-43 90L709 575c-26 13-36 44-22 70l24 44c19 35-15 74-52 60l-88-35c-39-16-82-16-121 0l-88 35c-37 14-71-25-52-60l24-44c14-26 4-57-22-70l-138-68c-35-17-54-54-43-90z"/>
+  <path fill="url(#shield-gradient)" d="M322 373c55-13 103-15 144-6l75 18c14 3 23 16 20 30l-29 130c-3 14 5 28 19 32 29 8 59 8 88 0 14-4 22-18 19-32l-29-130c-3-14 6-27 20-30l75-18c41-9 89-7 144 6-65 30-114 54-148 72-29 15-39 51-21 78l39 57c14 21 7 49-16 61l-46 24c-25 13-56 8-75-13l-56-61c-18-20-48-20-66 0l-56 61c-19 21-50 26-75 13l-46-24c-23-12-30-40-16-61l39-57c18-27 8-63-21-78-34-18-83-42-148-72z"/>
+  <path fill="#fff" d="M396 768l92-50c15-8 33-8 48 0l92 50c16 9 19 30 6 42l-99 92c-13 12-33 12-46 0l-99-92c-13-12-10-33 6-42z"/>
+</svg>
