@@ -1,0 +1,25 @@
+---
+description: Conventions for standalone Python scripts in this experiments repo
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Script Conventions
+
+- Each script should be runnable directly: guard entry points with `if __name__ == "__main__":`.
+- Prefer the standard library; only add a dependency when it clearly earns its place.
+- Fail loudly with clear messages instead of silent `except: pass`.
+
+```python
+# ❌ BAD
+try:
+    render()
+except Exception:
+    pass
+
+# ✅ GOOD
+try:
+    render()
+except Exception as e:
+    raise SystemExit(f"render failed: {e}")
+```

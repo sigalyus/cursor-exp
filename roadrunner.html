@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Roadrunner Run!</title>
+<style>
+  :root {
+    --sky-top: #ffd89b;
+    --sky-bottom: #ff8c69;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #1a1030;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    color: #fff;
+    overflow: hidden;
+  }
+  #wrap {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #stage {
+    position: relative;
+    width: min(960px, 100%);
+    aspect-ratio: 960 / 400;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #000;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 14px;
+    background: rgba(15, 8, 35, .72);
+    backdrop-filter: blur(3px);
+    padding: 24px;
+    transition: opacity .2s ease;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: clamp(28px, 6vw, 58px);
+    letter-spacing: 2px;
+    text-shadow: 0 4px 0 #b03a2e, 0 8px 18px rgba(0,0,0,.5);
+    color: #ffe08a;
+  }
+  .overlay h2 {
+    font-size: clamp(22px, 5vw, 44px);
+    text-shadow: 0 3px 0 rgba(0,0,0,.4);
+  }
+  .overlay p { font-size: clamp(14px, 2.4vw, 20px); opacity: .92; max-width: 640px; line-height: 1.5; }
+  .keys { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .key {
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: clamp(13px, 2vw, 17px);
+  }
+  .key b { color: #ffe08a; }
+  button {
+    margin-top: 6px;
+    font: inherit;
+    font-size: clamp(16px, 3vw, 22px);
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #2a1400;
+    background: linear-gradient(#ffe08a, #ffb347);
+    border: none;
+    border-radius: 999px;
+    padding: 12px 34px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #c47a1a, 0 10px 20px rgba(0,0,0,.4);
+    transition: transform .05s ease, box-shadow .05s ease;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #c47a1a; }
+  #hud {
+    position: absolute;
+    top: 10px; left: 12px; right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: clamp(13px, 2.2vw, 18px);
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0,0,0,.6);
+    pointer-events: none;
+  }
+  #progressTrack {
+    position: absolute;
+    top: 40px; left: 12px; right: 12px;
+    height: 8px;
+    background: rgba(0,0,0,.35);
+    border-radius: 99px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #progressFill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #7CFC00, #ffe08a);
+    border-radius: 99px;
+    transition: width .1s linear;
+  }
+  #flagIcon { position:absolute; top:36px; right:8px; font-size:16px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="game" width="960" height="400"></canvas>
+
+    <div id="hud">
+      <span id="distanceLabel">0 m</span>
+      <span id="bestLabel">Best: 0 m</span>
+    </div>
+    <div id="progressTrack"><div id="progressFill"></div></div>
+    <div id="flagIcon">&#127937;</div>
+
+    <div id="startScreen" class="overlay">
+      <h1>ROADRUNNER RUN!</h1>
+      <p>Beep beep! Sprint down the canyon road and reach the finish line. Jump the cacti &amp; rocks, duck under the buzzards &mdash; and don't let the coyote catch you.</p>
+      <div class="keys">
+        <div class="key"><b>Space</b> / <b>&#8593;</b> / Tap &mdash; Jump</div>
+        <div class="key"><b>&#8595;</b> / <b>S</b> / Swipe down &mdash; Duck</div>
+        <div class="key"><b>P</b> &mdash; Pause</div>
+      </div>
+      <button id="startBtn">START RUN</button>
+    </div>
+
+    <div id="endScreen" class="overlay hidden">
+      <h2 id="endTitle">Caught!</h2>
+      <p id="endMsg"></p>
+      <button id="retryBtn">RUN AGAIN</button>
+    </div>
+
+    <div id="pauseScreen" class="overlay hidden">
+      <h2>Paused</h2>
+      <p>Press <b>P</b> to resume.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;   // 960
+  const H = canvas.height;  // 400
+  const GROUND_Y = 330;     // top of the ground surface
+
+  // ---- UI elements ----
+  const startScreen = document.getElementById("startScreen");
+  const endScreen   = document.getElementById("endScreen");
+  const pauseScreen = document.getElementById("pauseScreen");
+  const startBtn    = document.getElementById("startBtn");
+  const retryBtn    = document.getElementById("retryBtn");
+  const endTitle    = document.getElementById("endTitle");
+  const endMsg      = document.getElementById("endMsg");
+  const distanceLabel = document.getElementById("distanceLabel");
+  const bestLabel   = document.getElementById("bestLabel");
+  const progressFill = document.getElementById("progressFill");
+
+  // ---- Game constants ----
+  const GRAVITY = 2400;          // px / s^2
+  const JUMP_VELOCITY = -900;    // initial jump speed
+  const RUN_X = 170;             // runner's fixed screen x
+  const COURSE_LENGTH = 2600;    // meters to the finish line
+  const START_SPEED = 300;       // px / s (world scroll)
+  const MAX_SPEED = 620;
+  const SPEED_RAMP = 11;         // speed gained per second
+
+  let best = Number(localStorage.getItem("roadrunnerBest") || 0);
+  bestLabel.textContent = "Best: " + best + " m";
+
+  // ---- Game state ----
+  const State = { MENU: "menu", PLAY: "play", PAUSE: "pause", OVER: "over", WIN: "win" };
+  let state = State.MENU;
+
+  let runner, obstacles, coyote, speed, distance, spawnTimer, lastTime, animTime, groundOffset;
+  let clouds = [], hills = [];
+
+  function resetWorld() {
+    runner = {
+      y: GROUND_Y,           // baseline (feet)
+      vy: 0,
+      w: 46,
+      h: 46,
+      onGround: true,
+      ducking: false,
+      jumps: 0,              // for double-ish forgiveness (single jump here)
+    };
+    obstacles = [];
+    coyote = { dist: -260, lunge: 0 }; // how far behind the runner (in px). Grows on near-miss/mistake.
+    speed = START_SPEED;
+    distance = 0;            // meters travelled
+    spawnTimer = 0.8;
+    animTime = 0;
+    groundOffset = 0;
+    lastTime = performance.now();
+
+    clouds = [];
+    for (let i = 0; i < 5; i++) {
+      clouds.push({ x: Math.random() * W, y: 40 + Math.random() * 90, s: 0.2 + Math.random() * 0.3, r: 18 + Math.random() * 22 });
+    }
+    hills = [];
+    for (let i = 0; i < 4; i++) {
+      hills.push({ x: i * 300, h: 70 + Math.random() * 60 });
+    }
+  }
+
+  // ---- Input ----
+  function jump() {
+    if (state !== State.PLAY) return;
+    if (runner.onGround) {
+      runner.vy = JUMP_VELOCITY;
+      runner.onGround = false;
+      runner.ducking = false;
+    }
+  }
+  function setDuck(on) {
+    if (state !== State.PLAY) return;
+    runner.ducking = on && runner.onGround;
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    switch (e.code) {
+      case "Space":
+      case "ArrowUp":
+      case "KeyW":
+        e.preventDefault();
+        if (state === State.MENU) startGame();
+        else if (state === State.OVER || state === State.WIN) startGame();
+        else jump();
+        break;
+      case "ArrowDown":
+      case "KeyS":
+        e.preventDefault();
+        setDuck(true);
+        break;
+      case "KeyP":
+        togglePause();
+        break;
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "ArrowDown" || e.code === "KeyS") setDuck(false);
+  });
+
+  // Touch controls
+  let touchStartY = null;
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    touchStartY = e.touches[0].clientY;
+    if (state === State.PLAY) jump();
+  }, { passive: false });
+  canvas.addEventListener("touchmove", (e) => {
+    if (touchStartY == null) return;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (dy > 30) setDuck(true);
+  }, { passive: false });
+  canvas.addEventListener("touchend", () => { setDuck(false); touchStartY = null; }, { passive: false });
+
+  startBtn.addEventListener("click", startGame);
+  retryBtn.addEventListener("click", startGame);
+
+  function togglePause() {
+    if (state === State.PLAY) {
+      state = State.PAUSE;
+      pauseScreen.classList.remove("hidden");
+    } else if (state === State.PAUSE) {
+      state = State.PLAY;
+      pauseScreen.classList.add("hidden");
+      lastTime = performance.now();
+    }
+  }
+
+  function startGame() {
+    resetWorld();
+    state = State.PLAY;
+    startScreen.classList.add("hidden");
+    endScreen.classList.add("hidden");
+    pauseScreen.classList.add("hidden");
+    lastTime = performance.now();
+  }
+
+  function endGame(win) {
+    state = win ? State.WIN : State.OVER;
+    const meters = Math.floor(distance);
+    if (meters > best) {
+      best = meters;
+      localStorage.setItem("roadrunnerBest", String(best));
+      bestLabel.textContent = "Best: " + best + " m";
+    }
+    if (win) {
+      endTitle.textContent = "You made it! \uD83C\uDFC1";
+      endTitle.style.color = "#7CFC00";
+      endMsg.textContent = "You outran the coyote across the whole canyon. Beep beep!";
+    } else {
+      endTitle.textContent = "Caught! \uD83D\uDC3E";
+      endTitle.style.color = "#ff6b6b";
+      endMsg.textContent = "You reached " + meters + " m of " + COURSE_LENGTH + " m before the coyote got you.";
+    }
+    endScreen.classList.remove("hidden");
+  }
+
+  // ---- Obstacle spawning ----
+  // types: cactus (jump), rock (jump), buzzard (duck / or jump high)
+  function spawnObstacle() {
+    const roll = Math.random();
+    let o;
+    if (roll < 0.42) {
+      // cactus
+      const h = 40 + Math.random() * 34;
+      o = { type: "cactus", x: W + 40, w: 26 + Math.random()*10, h, top: GROUND_Y - h, passed: false };
+    } else if (roll < 0.72) {
+      // rock (short, wide)
+      const h = 28 + Math.random() * 16;
+      o = { type: "rock", x: W + 40, w: 46 + Math.random()*26, h, top: GROUND_Y - h, passed: false };
+    } else {
+      // buzzard: flies at duck height sometimes, or high enough to run under
+      const low = Math.random() < 0.7;
+      const h = 30;
+      const top = low ? GROUND_Y - 56 : GROUND_Y - 120;
+      o = { type: "buzzard", x: W + 40, w: 48, h, top, passed: false, flap: 0, low };
+    }
+    obstacles.push(o);
+  }
+
+  function nextSpawnGap() {
+    // Gap shrinks as speed grows; keep it fair.
+    const base = 1.15 - (speed - START_SPEED) / (MAX_SPEED - START_SPEED) * 0.55;
+    return Math.max(0.55, base) + Math.random() * 0.55;
+  }
+
+  // ---- Collision ----
+  function runnerBox() {
+    const h = runner.ducking ? runner.h * 0.55 : runner.h;
+    const w = runner.ducking ? runner.w * 1.15 : runner.w;
+    return { x: RUN_X - w/2, y: runner.y - h, w, h };
+  }
+  function overlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.top + b.h && a.y + a.h > b.top;
+  }
+
+  // ---- Update ----
+  function update(dt) {
+    animTime += dt;
+
+    // Speed ramps up over time (capped)
+    speed = Math.min(MAX_SPEED, speed + SPEED_RAMP * dt);
+
+    // Distance in "meters" (1m ~ 10px of travel)
+    distance += (speed * dt) / 10;
+    if (distance >= COURSE_LENGTH) {
+      distance = COURSE_LENGTH;
+      endGame(true);
+      return;
+    }
+
+    // Runner vertical physics
+    runner.vy += GRAVITY * dt;
+    runner.y += runner.vy * dt;
+    if (runner.y >= GROUND_Y) {
+      runner.y = GROUND_Y;
+      runner.vy = 0;
+      runner.onGround = true;
+    }
+
+    // Parallax scenery
+    groundOffset = (groundOffset + speed * dt) % 48;
+    for (const c of clouds) {
+      c.x -= speed * dt * c.s * 0.3;
+      if (c.x < -c.r*3) { c.x = W + c.r*3; c.y = 40 + Math.random()*90; }
+    }
+    for (const hl of hills) {
+      hl.x -= speed * dt * 0.25;
+      if (hl.x < -160) { hl.x += 4 * 300; hl.h = 70 + Math.random()*60; }
+    }
+
+    // Spawn obstacles (stop spawning near the finish so the ending is clean)
+    if (distance < COURSE_LENGTH - 120) {
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        spawnObstacle();
+        spawnTimer = nextSpawnGap();
+      }
+    }
+
+    // Move obstacles, detect pass / collision
+    const rb = runnerBox();
+    for (const o of obstacles) {
+      o.x -= speed * dt;
+      if (o.type === "buzzard") o.flap += dt * 12;
+
+      if (!o.passed && o.x + o.w < RUN_X - runner.w/2) {
+        o.passed = true;
+        // Successfully dodged: coyote falls back a little.
+        coyote.dist = Math.max(-320, coyote.dist - 26);
+      }
+
+      if (overlap(rb, o)) {
+        // Hit! Coyote pounces.
+        endGame(false);
+        return;
+      }
+    }
+    obstacles = obstacles.filter(o => o.x + o.w > -40);
+
+    // Coyote creeps closer slowly over time (pressure), recovers on clean dodges.
+    coyote.dist = Math.min(-40, coyote.dist + 6 * dt);
+    coyote.lunge += dt;
+
+    // HUD
+    distanceLabel.textContent = Math.floor(distance) + " m";
+    progressFill.style.width = (distance / COURSE_LENGTH * 100).toFixed(1) + "%";
+  }
+
+  // ---- Rendering ----
+  function drawBackground() {
+    // Sky gradient
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#ffd89b");
+    g.addColorStop(0.55, "#ff9a5a");
+    g.addColorStop(1, "#ff7e5f");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Sun
+    ctx.fillStyle = "rgba(255, 244, 214, 0.9)";
+    ctx.beginPath();
+    ctx.arc(W - 150, 110, 60, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clouds
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    for (const c of clouds) {
+      puff(c.x, c.y, c.r);
+    }
+
+    // Distant mesas / hills
+    for (const hl of hills) {
+      ctx.fillStyle = "#c85a3a";
+      const baseY = GROUND_Y;
+      ctx.beginPath();
+      ctx.moveTo(hl.x, baseY);
+      ctx.lineTo(hl.x + 40, baseY - hl.h);
+      ctx.lineTo(hl.x + 120, baseY - hl.h);
+      ctx.lineTo(hl.x + 160, baseY);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  function puff(x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.arc(x + r, y + 6, r*0.8, 0, Math.PI*2);
+    ctx.arc(x - r, y + 6, r*0.8, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawGround() {
+    // Ground body
+    ctx.fillStyle = "#d9a066";
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    ctx.fillStyle = "#c68a4e";
+    ctx.fillRect(0, GROUND_Y, W, 8);
+    // Road dashes
+    ctx.fillStyle = "rgba(90, 50, 20, 0.35)";
+    for (let x = -groundOffset; x < W; x += 48) {
+      ctx.fillRect(x, GROUND_Y + 24, 24, 5);
+    }
+    // pebbles
+    ctx.fillStyle = "rgba(120,70,30,0.4)";
+    for (let x = -((groundOffset*1.7)%90); x < W; x += 90) {
+      ctx.fillRect(x, GROUND_Y + 46, 8, 4);
+    }
+  }
+
+  function drawFinish() {
+    // Finish line slides in from the right as we approach the end.
+    const remaining = COURSE_LENGTH - distance; // meters
+    if (remaining > 120) return;
+    const x = RUN_X + remaining * 10; // convert meters back to px
+    // pole
+    ctx.fillStyle = "#3a2a1a";
+    ctx.fillRect(x, GROUND_Y - 150, 6, 150);
+    // checkered flag
+    const fw = 70, fh = 46, cols = 7, rows = 5;
+    const cw = fw / cols, ch = fh / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.fillStyle = ((r + c) % 2 === 0) ? "#ffffff" : "#111111";
+        ctx.fillRect(x + 6 + c*cw, GROUND_Y - 150 + r*ch, cw, ch);
+      }
+    }
+  }
+
+  function drawObstacle(o) {
+    if (o.type === "cactus") {
+      ctx.fillStyle = "#2e8b57";
+      const x = o.x, w = o.w, top = o.top, h = o.h;
+      ctx.fillRect(x + w*0.35, top, w*0.3, h);            // trunk
+      ctx.fillRect(x, top + h*0.35, w*0.35, w*0.28);       // left arm base
+      ctx.fillRect(x, top + h*0.15, w*0.22, h*0.35);       // left arm up
+      ctx.fillRect(x + w*0.65, top + h*0.25, w*0.35, w*0.28);
+      ctx.fillRect(x + w*0.78, top + h*0.05, w*0.22, h*0.4);
+    } else if (o.type === "rock") {
+      ctx.fillStyle = "#8a7a6a";
+      const x = o.x, w = o.w, top = o.top, h = o.h;
+      ctx.beginPath();
+      ctx.moveTo(x, top + h);
+      ctx.lineTo(x + w*0.15, top + h*0.2);
+      ctx.lineTo(x + w*0.5, top);
+      ctx.lineTo(x + w*0.85, top + h*0.25);
+      ctx.lineTo(x + w, top + h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(x + w*0.3, top + h*0.35, w*0.25, 4);
+    } else {
+      // buzzard
+      const x = o.x + o.w/2, y = o.top + o.h/2;
+      const flap = Math.sin(o.flap) * 10;
+      ctx.fillStyle = "#3a3a3a";
+      ctx.beginPath();
+      ctx.ellipse(x, y, 14, 8, 0, 0, Math.PI*2); // body
+      ctx.fill();
+      ctx.beginPath(); // wings
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 26, y - 6 - flap);
+      ctx.lineTo(x - 6, y + 2);
+      ctx.closePath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 26, y - 6 - flap);
+      ctx.lineTo(x + 6, y + 2);
+      ctx.closePath();
+      ctx.fill();
+      // beak
+      ctx.fillStyle = "#e0a030";
+      ctx.fillRect(x + 12, y - 2, 8, 4);
+    }
+  }
+
+  function drawRunner() {
+    const feetY = runner.y;
+    const legPhase = Math.sin(animTime * 20);
+    const bodyColor = "#4169e1";     // roadrunner blue-ish
+    const accent = "#6ab0ff";
+    ctx.save();
+    ctx.translate(RUN_X, feetY);
+
+    const duck = runner.ducking && runner.onGround;
+    const bodyH = duck ? 22 : 34;
+    const bodyW = duck ? 52 : 40;
+
+    // legs
+    ctx.strokeStyle = "#e0a030";
+    ctx.lineWidth = 4;
+    if (runner.onGround) {
+      ctx.beginPath();
+      ctx.moveTo(-6, -bodyH*0 - 0);
+      ctx.lineTo(-10 - legPhase*6, 0);
+      ctx.moveTo(6, 0);
+      ctx.lineTo(10 + legPhase*6, 0);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-6, -4); ctx.lineTo(-14, 2);
+      ctx.moveTo(6, -4);  ctx.lineTo(14, 2);
+      ctx.stroke();
+    }
+
+    // body
+    ctx.fillStyle = bodyColor;
+    roundRect(-bodyW/2, -bodyH - 6, bodyW, bodyH, 10);
+    ctx.fill();
+
+    // tail
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    const tailWag = Math.sin(animTime*16)*4;
+    ctx.moveTo(-bodyW/2 + 4, -bodyH);
+    ctx.lineTo(-bodyW/2 - 26, -bodyH - 10 + tailWag);
+    ctx.lineTo(-bodyW/2 - 24, -bodyH + 2 + tailWag);
+    ctx.lineTo(-bodyW/2 + 6, -bodyH + 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // head + neck
+    const headX = bodyW/2 - 2;
+    const headY = duck ? -bodyH - 2 : -bodyH - 22;
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.moveTo(bodyW/2 - 14, -bodyH - 2);
+    ctx.lineTo(headX, headY + 8);
+    ctx.lineTo(headX + 14, headY + 8);
+    ctx.lineTo(headX + 8, -bodyH + 2);
+    ctx.closePath();
+    ctx.fill();
+    // head
+    ctx.beginPath();
+    ctx.arc(headX + 8, headY + 4, 11, 0, Math.PI*2);
+    ctx.fill();
+    // crest feathers
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.moveTo(headX + 2, headY - 6);
+    ctx.lineTo(headX - 6, headY - 16);
+    ctx.lineTo(headX + 6, headY - 8);
+    ctx.closePath();
+    ctx.fill();
+    // eye
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(headX + 11, headY + 2, 3.2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.arc(headX + 12, headY + 2, 1.5, 0, Math.PI*2); ctx.fill();
+    // beak
+    ctx.fillStyle = "#e0a030";
+    ctx.beginPath();
+    ctx.moveTo(headX + 18, headY + 1);
+    ctx.lineTo(headX + 30, headY + 4);
+    ctx.lineTo(headX + 18, headY + 7);
+    ctx.closePath();
+    ctx.fill();
+
+    // speed lines when fast
+    ctx.restore();
+    if (speed > 380) {
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const yy = feetY - 20 - i*12;
+        ctx.beginPath();
+        ctx.moveTo(RUN_X - 40, yy);
+        ctx.lineTo(RUN_X - 40 - 24 - (animTime*300 % 20), yy);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawCoyote() {
+    // Coyote chases at RUN_X + coyote.dist (dist is negative => behind/left).
+    const x = RUN_X + coyote.dist;
+    const y = GROUND_Y;
+    const bob = Math.sin(animTime * 18) * 3;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    // legs
+    ctx.strokeStyle = "#7a5230";
+    ctx.lineWidth = 4;
+    const lp = Math.sin(animTime * 22) * 7;
+    ctx.beginPath();
+    ctx.moveTo(-14, -14); ctx.lineTo(-18 - lp, 0);
+    ctx.moveTo(-2, -14);  ctx.lineTo(-6 + lp, 0);
+    ctx.moveTo(10, -14);  ctx.lineTo(6 - lp, 0);
+    ctx.moveTo(20, -14);  ctx.lineTo(24 + lp, 0);
+    ctx.stroke();
+    // body
+    ctx.fillStyle = "#9a6a3a";
+    roundRect(-24, -34, 52, 22, 9); ctx.fill();
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(-24, -30);
+    ctx.lineTo(-44, -34 + Math.sin(animTime*10)*4);
+    ctx.lineTo(-24, -20);
+    ctx.closePath();
+    ctx.fill();
+    // neck+head
+    ctx.beginPath();
+    ctx.moveTo(20, -30);
+    ctx.lineTo(40, -40);
+    ctx.lineTo(50, -30);
+    ctx.lineTo(30, -20);
+    ctx.closePath();
+    ctx.fill();
+    // snout
+    ctx.fillRect(46, -34, 12, 7);
+    // ear
+    ctx.beginPath();
+    ctx.moveTo(34, -40); ctx.lineTo(38, -52); ctx.lineTo(44, -40);
+    ctx.closePath(); ctx.fill();
+    // eye
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.arc(44, -33, 1.8, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // dust cloud behind coyote
+    ctx.fillStyle = "rgba(200,160,110,0.5)";
+    for (let i = 0; i < 4; i++) {
+      const px = x - 30 - i*10 - (animTime*200 % 12);
+      puffSmall(px, y - 6, 5 + i);
+    }
+  }
+
+  function puffSmall(x, y, r) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function render() {
+    drawBackground();
+    drawGround();
+    drawFinish();
+    for (const o of obstacles) drawObstacle(o);
+    drawCoyote();
+    drawRunner();
+  }
+
+  // ---- Main loop ----
+  function frame(now) {
+    if (state === State.PLAY) {
+      let dt = (now - lastTime) / 1000;
+      lastTime = now;
+      if (dt > 0.05) dt = 0.05; // clamp big gaps (tab switches)
+      update(dt);
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  // Draw a static intro scene under the menu.
+  resetWorld();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
